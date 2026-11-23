@@ -14,14 +14,24 @@ info:
       return the original resource with `200 OK` and `Idempotent-Replayed: true`; reusing a key
       with a different payload is rejected with `409 idempotency_conflict`.
     - Timestamps are RFC 3339 / ISO 8601 in UTC.
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
 servers:
   - url: http://localhost:8080
     description: docker compose
+# Authentication is out of scope for this assessment (see README); the API is meant
+# to run behind an API gateway that authenticates callers.
+security: []
 tags:
   - name: Notifications
+    description: Create, inspect, cancel and retry single notifications.
   - name: Batches
+    description: Bulk creation (up to 1000 per request) and batch level status.
   - name: Templates
+    description: Reusable message templates with variable substitution.
   - name: Observability
+    description: Metrics, health checks and the real-time WebSocket status stream.
 paths:
   /api/v1/notifications:
     post:
@@ -321,6 +331,7 @@ paths:
     get:
       tags: [Observability]
       summary: Prometheus metrics
+      operationId: getPrometheusMetrics
       responses:
         '200': { description: OpenMetrics text format, content: { text/plain: { schema: { type: string } } } }
 
@@ -328,6 +339,7 @@ paths:
     get:
       tags: [Observability]
       summary: Liveness probe
+      operationId: getLiveness
       responses:
         '200': { description: Process is up }
 
@@ -335,6 +347,7 @@ paths:
     get:
       tags: [Observability]
       summary: Readiness probe (PostgreSQL, Redis)
+      operationId: getReadiness
       responses:
         '200':
           description: All dependencies reachable
@@ -351,6 +364,7 @@ paths:
     get:
       tags: [Observability]
       summary: WebSocket stream of status changes
+      operationId: streamStatusEvents
       description: |
         Upgrade to a WebSocket to receive `notification.status` events in real time.
         Filter with query parameters (repeatable) or by sending
