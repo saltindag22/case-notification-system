@@ -13,6 +13,7 @@ import (
 
 	"github.com/saltindag22/case-notification-system/internal/circuitbreaker"
 	"github.com/saltindag22/case-notification-system/internal/domain"
+	"github.com/saltindag22/case-notification-system/internal/events"
 	"github.com/saltindag22/case-notification-system/internal/metrics"
 	"github.com/saltindag22/case-notification-system/internal/provider"
 	"github.com/saltindag22/case-notification-system/internal/queue"
@@ -270,7 +271,7 @@ func (b *fakeBroker) QueueDepth(string) (int, error) { return b.depth, nil }
 func TestDispatcherRespectsQueueDepthLimit(t *testing.T) {
 	store := &fakeDispatchStore{due: map[domain.Channel]int{domain.ChannelSMS: 10_000}}
 	broker := &fakeBroker{depth: 1500}
-	d := NewDispatcher(store, broker, DispatcherConfig{BatchSize: 200, MaxQueueDepth: 2000}, metrics.New("test"), discard)
+	d := NewDispatcher(store, broker, nil, DispatcherConfig{BatchSize: 200, MaxQueueDepth: 2000}, metrics.New("test"), discard)
 	if err := d.DispatchChannel(context.Background(), domain.ChannelSMS); err != nil {
 		t.Fatal(err)
 	}
@@ -288,19 +289,34 @@ func TestDispatcherRespectsQueueDepthLimit(t *testing.T) {
 func TestDispatcherStopsWhenBacklogEmpty(t *testing.T) {
 	store := &fakeDispatchStore{due: map[domain.Channel]int{domain.ChannelEmail: 3}}
 	broker := &fakeBroker{}
-	d := NewDispatcher(store, broker, DispatcherConfig{BatchSize: 100, MaxQueueDepth: 2000}, nil, discard)
+	pub := &eventSink{}
+	d := NewDispatcher(store, broker, pub, DispatcherConfig{BatchSize: 100, MaxQueueDepth: 2000}, nil, discard)
 	if err := d.DispatchChannel(context.Background(), domain.ChannelEmail); err != nil || len(broker.published) != 3 {
 		t.Fatalf("published %d err %v", len(broker.published), err)
+	}
+	if len(pub.events) != 3 || pub.events[0].Status != domain.StatusQueued {
+		t.Fatalf("expected 3 queued events, got %+v", pub.events)
 	}
 }
 
 func TestDispatcherPublishFailureKeepsBacklog(t *testing.T) {
 	store := &fakeDispatchStore{due: map[domain.Channel]int{domain.ChannelPush: 5}}
-	d := NewDispatcher(store, &fakeBroker{fail: true}, DispatcherConfig{BatchSize: 100, MaxQueueDepth: 2000}, nil, discard)
+	d := NewDispatcher(store, &fakeBroker{fail: true}, nil, DispatcherConfig{BatchSize: 100, MaxQueueDepth: 2000}, nil, discard)
 	if err := d.DispatchChannel(context.Background(), domain.ChannelPush); err == nil {
 		t.Fatal("expected error")
 	}
 	if store.due[domain.ChannelPush] != 5 {
 		t.Fatal("failed publish must leave rows due")
 	}
+}
+
+type eventSink struct {
+	mu     sync.Mutex
+	events []events.Event
+}
+
+func (e *eventSink) Publish(_ context.Context, ev events.Event) {
+	e.mu.Lock()
+	e.events = append(e.events, ev)
+	e.mu.Unlock()
 }

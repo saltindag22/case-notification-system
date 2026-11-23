@@ -91,6 +91,7 @@ func run() error {
 	defer broker.Close()
 
 	m := metrics.New("notification_worker")
+	bus := events.NewRedisBus(rdb, log)
 	breakers := map[domain.Channel]*circuitbreaker.Breaker{}
 	for _, ch := range domain.Channels {
 		breakers[ch] = circuitbreaker.New(circuitbreaker.Config{
@@ -113,12 +114,12 @@ func run() error {
 			MaxAttempts: cfg.MaxAttempts, BaseDelay: cfg.RetryBaseDelay, MaxDelay: cfg.RetryMaxDelay,
 			Multiplier: 2, Jitter: 0.5,
 		},
-		Events:  events.NewRedisBus(rdb, log),
+		Events:  bus,
 		Metrics: m,
 		Log:     log,
 	})
 	consumers := worker.NewPool(broker, processor, cfg.WorkerConcurrency, log)
-	dispatcher := worker.NewDispatcher(store, broker, worker.DispatcherConfig{
+	dispatcher := worker.NewDispatcher(store, broker, bus, worker.DispatcherConfig{
 		Interval:             cfg.DispatchInterval,
 		BatchSize:            cfg.DispatchBatchSize,
 		MaxQueueDepth:        cfg.BrokerMaxQueueDepth,
