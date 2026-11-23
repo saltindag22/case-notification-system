@@ -2,6 +2,7 @@ package domain
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -80,7 +81,10 @@ func TestValidateContent(t *testing.T) {
 			if err == nil {
 				t.Fatalf("expected error on %q, got nil", tc.wantField)
 			}
-			ve := err.(*ValidationError)
+			var ve *ValidationError
+			if !errors.As(err, &ve) {
+				t.Fatalf("expected *ValidationError, got %T", err)
+			}
 			found := false
 			for _, f := range ve.Fields {
 				if f.Field == tc.wantField {

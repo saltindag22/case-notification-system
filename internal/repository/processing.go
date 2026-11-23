@@ -93,7 +93,7 @@ func (s *Store) DispatchDue(ctx context.Context, ch domain.Channel, limit int, p
 			UPDATE notifications n SET status = v.prev, updated_at = now()
 			FROM unnest($1::uuid[], $2::text[]) AS v(id, prev)
 			WHERE n.id = v.id AND n.status = 'queued'`, ids, previous); rerr != nil {
-			return 0, fmt.Errorf("publish: %w (revert failed, reaper will recover: %v)", err, rerr)
+			return 0, fmt.Errorf("publish: %w (revert failed, reaper will recover: %w)", err, rerr)
 		}
 		return 0, fmt.Errorf("publish: %w", err)
 	}

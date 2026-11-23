@@ -27,7 +27,7 @@ func Parse(name, body string) (*template.Template, []string, error) {
 	}
 	t, err := template.New(name).Option("missingkey=error").Parse(body)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: %v", ErrRender, err)
+		return nil, nil, fmt.Errorf("%w: %w", ErrRender, err)
 	}
 	return t, variables(t), nil
 }
@@ -100,7 +100,7 @@ func variables(t *template.Template) []string {
 		}
 	}
 	if t.Tree != nil {
-		walk(t.Tree.Root)
+		walk(t.Root)
 	}
 	return out
 }
