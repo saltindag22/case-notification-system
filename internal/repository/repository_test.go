@@ -354,3 +354,51 @@ func TestStats(t *testing.T) {
 		t.Fatalf("stats: %v %v", stats, err)
 	}
 }
+
+func TestDispatchPublishFailureRevertsStatus(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	pending, _, _ := s.CreateNotification(ctx, newNotification(domain.ChannelSMS, domain.PriorityNormal))
+	retrying, _, _ := s.CreateNotification(ctx, newNotification(domain.ChannelSMS, domain.PriorityNormal))
+	_, _ = s.pool.Exec(ctx, `UPDATE notifications SET status = 'retrying' WHERE id = $1`, retrying.ID)
+
+	_, err := s.DispatchDue(ctx, domain.ChannelSMS, 10, func(context.Context, []DispatchItem) error {
+		return errors.New("broker down")
+	})
+	if err == nil {
+		t.Fatal("expected publish error")
+	}
+	for id, want := range map[uuid.UUID]domain.Status{pending.ID: domain.StatusPending, retrying.ID: domain.StatusRetrying} {
+		got, _ := s.GetNotification(ctx, id)
+		if got.Status != want {
+			t.Fatalf("status must be reverted to %s, got %s", want, got.Status)
+		}
+	}
+}
+
+// TestDispatchCommitsBeforePublish guards against the race where a consumer
+// receives the message before the dispatcher's transaction is visible.
+func TestDispatchCommitsBeforePublish(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	n, _, _ := s.CreateNotification(ctx, newNotification(domain.ChannelEmail, domain.PriorityNormal))
+
+	_, err := s.DispatchDue(ctx, domain.ChannelEmail, 10, func(ctx context.Context, items []DispatchItem) error {
+		// Simulate an instant consumer using a separate connection.
+		claimed, err := s.Claim(ctx, items[0].ID, items[0].Attempts)
+		if err != nil {
+			return err
+		}
+		if claimed == nil {
+			t.Error("consumer could not claim: dispatch state was not committed before publish")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.GetNotification(ctx, n.ID)
+	if got.Status != domain.StatusProcessing {
+		t.Fatalf("expected processing, got %s", got.Status)
+	}
+}
