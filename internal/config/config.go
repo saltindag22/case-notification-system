@@ -85,7 +85,7 @@ func Load(serviceName string) (Config, error) {
 		DispatchBatchSize:    envInt("DISPATCH_BATCH_SIZE", 500),
 		BrokerMaxQueueDepth:  envInt("BROKER_MAX_QUEUE_DEPTH", 2000),
 		AgingInterval:        envDuration("PRIORITY_AGING_INTERVAL", 5*time.Minute),
-		StuckQueuedAfter:     envDuration("STUCK_QUEUED_AFTER", 15*time.Minute),
+		StuckQueuedAfter:     envDuration("STUCK_QUEUED_AFTER", 5*time.Minute),
 		StuckProcessingAfter: envDuration("STUCK_PROCESSING_AFTER", 2*time.Minute),
 	}
 	for _, ch := range []string{"sms", "email", "push"} {
