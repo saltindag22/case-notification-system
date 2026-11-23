@@ -1,0 +1,144 @@
+name: notification-system
+
+x-app-env: &app-env
+  APP_ENV: docker
+  LOG_LEVEL: info
+  DATABASE_URL: postgres://notifications:notifications@postgres:5432/notifications?sslmode=disable
+  REDIS_URL: redis://redis:6379/0
+  RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+  # Point this at your webhook.site URL to use the real external simulator, e.g.
+  # PROVIDER_URL=https://webhook.site/<your-uuid> docker compose up
+  PROVIDER_URL: ${PROVIDER_URL:-http://mock-provider:8090/webhook}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: notifications
+      POSTGRES_PASSWORD: notifications
+      POSTGRES_DB: notifications
+    # Not published to the host to avoid clashing with a local Postgres;
+    # use `docker compose exec postgres psql -U notifications` instead.
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./deploy/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U notifications -d notifications"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    ports: ["15672:15672"]                # management UI: http://localhost:15672 (guest/guest)
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports: ["16686:16686"]                # tracing UI: http://localhost:16686
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports: ["9090:9090"]
+    depends_on: [api, worker]
+
+  mock-provider:
+    build: .
+    image: notification-system:local
+    entrypoint: ["/app/mockprovider"]
+    environment:
+      HTTP_ADDR: ":8090"
+      # Simulated provider behaviour (tune to watch retries / circuit breaker in action)
+      MOCK_FAILURE_RATE: ${MOCK_FAILURE_RATE:-0.05}
+      MOCK_LATENCY_MS: ${MOCK_LATENCY_MS:-30}
+      MOCK_LATENCY_JITTER_MS: ${MOCK_LATENCY_JITTER_MS:-40}
+    ports: ["8090:8090"]
+    healthcheck:
+      test: ["CMD", "/app/mockprovider", "healthcheck"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: .
+    image: notification-system:local
+    entrypoint: ["/app/api"]
+    environment:
+      <<: *app-env
+      SERVICE_NAME: notification-api
+      HTTP_ADDR: ":8080"
+    ports: ["${API_PORT:-8080}:8080"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      jaeger: { condition: service_started }
+    healthcheck:
+      test: ["CMD", "/app/api", "healthcheck"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: on-failure
+
+  worker:
+    build: .
+    image: notification-system:local
+    entrypoint: ["/app/worker"]
+    environment:
+      <<: *app-env
+      SERVICE_NAME: notification-worker
+      HTTP_ADDR: ":9091"
+    ports: ["9091:9091"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      api: { condition: service_healthy }          # api applies the migrations
+      mock-provider: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "/app/worker", "healthcheck"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    # The worker deliberately exits when it loses its broker connection
+    # (crash-only design); the orchestrator restarts it and it reconnects cleanly.
+    restart: unless-stopped
+
+  # Full test suite (unit + integration against real Postgres/Redis):
+  #   docker compose run --rm tests
+  tests:
+    image: golang:1.26
+    profiles: ["test"]
+    working_dir: /src
+    command: ["go", "test", "-race", "-count=1", "-coverprofile=coverage.out", "./..."]
+    environment:
+      DATABASE_URL: postgres://notifications:notifications@postgres:5432/notifications_test?sslmode=disable
+      REDIS_URL: redis://redis:6379/15
+    volumes:
+      - .:/src
+      - gomod:/go/pkg/mod
+      - gocache:/root/.cache/go-build
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+volumes:
+  pgdata:
+  gomod:
+  gocache:
