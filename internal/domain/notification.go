@@ -178,6 +178,7 @@ type Notification struct {
 	CreatedAt         time.Time       `json:"createdAt"`
 	UpdatedAt         time.Time       `json:"updatedAt"`
 	SentAt            *time.Time      `json:"sentAt,omitempty"`
+	FailedAt          *time.Time      `json:"failedAt,omitempty"`
 	CancelledAt       *time.Time      `json:"cancelledAt,omitempty"`
 
 	// Internal fields that are persisted but never exposed through the API.
