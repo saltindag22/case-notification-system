@@ -8,4 +8,4 @@ exec docker run --rm -i \
   -v notification-system-gocache:/root/.cache/go-build \
   -e GOFLAGS="${GOFLAGS:-}" \
   ${GO_DOCKER_ARGS:-} \
-  golang:1.25 go "$@"
+  golang:1.26 go "$@"
