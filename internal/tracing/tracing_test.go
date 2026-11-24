@@ -37,3 +37,17 @@ func TestHeaderCarrier(t *testing.T) {
 		t.Fatal("carrier mismatch")
 	}
 }
+
+func TestTracesURL(t *testing.T) {
+	cases := map[string]string{
+		"http://jaeger:4318":             "http://jaeger:4318/v1/traces",
+		"http://jaeger:4318/":            "http://jaeger:4318/v1/traces",
+		"https://otel.example/v1/traces": "https://otel.example/v1/traces",
+		"http://collector:4318/otlp":     "http://collector:4318/otlp/v1/traces",
+	}
+	for in, want := range cases {
+		if got := TracesURL(in); got != want {
+			t.Errorf("TracesURL(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

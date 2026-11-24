@@ -13,6 +13,8 @@ package tracing
 import (
 	"context"
 	"fmt"
+	"net/url"
+	"strings"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
@@ -42,7 +44,7 @@ func Init(ctx context.Context, service, version, endpoint string, sampleRatio fl
 		sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.TraceIDRatioBased(sampleRatio))),
 	}
 	if endpoint != "" {
-		exp, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpointURL(endpoint))
+		exp, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpointURL(TracesURL(endpoint)))
 		if err != nil {
 			return nil, fmt.Errorf("otlp exporter: %w", err)
 		}
@@ -90,4 +92,18 @@ func (c HeaderCarrier) Keys() []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// TracesURL turns an OTLP base endpoint (OTEL_EXPORTER_OTLP_ENDPOINT, e.g.
+// http://jaeger:4318) into the traces URL. Per the OTLP spec the base endpoint
+// gets "/v1/traces" appended; WithEndpointURL would otherwise POST to "/".
+func TracesURL(endpoint string) string {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return endpoint
+	}
+	if !strings.HasSuffix(u.Path, "/v1/traces") {
+		u.Path = strings.TrimSuffix(u.Path, "/") + "/v1/traces"
+	}
+	return u.String()
 }
