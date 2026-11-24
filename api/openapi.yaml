@@ -14,9 +14,6 @@ info:
       return the original resource with `200 OK` and `Idempotent-Replayed: true`; reusing a key
       with a different payload is rejected with `409 idempotency_conflict`.
     - Timestamps are RFC 3339 / ISO 8601 in UTC.
-  license:
-    name: MIT
-    url: https://opensource.org/licenses/MIT
 servers:
   - url: /
     description: The server hosting this documentation (Swagger UI "Try it out" works on any port)

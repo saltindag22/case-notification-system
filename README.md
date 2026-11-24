@@ -29,8 +29,11 @@ WebSocket, metrics and distributed traces.
 Requirements: Docker with Compose v2. A local Go toolchain is **not** needed.
 
 ```bash
-docker compose up --build
+docker compose up --build        # or: docker-compose up --build
 ```
+
+The first build takes about a minute. Everything (migrations included) is applied automatically; the stack is ready
+when `curl localhost:8080/health/ready` returns `{"status":"ok",…}`.
 
 | What | URL |
 |---|---|
@@ -51,21 +54,33 @@ curl -s -X POST localhost:8080/api/v1/notifications \
   -d '{"recipient":"+905551234567","channel":"sms","content":"Your code is 123456","priority":"high"}'
 ```
 
-Run the end-to-end smoke test (14 checks against the running stack):
+Run the end-to-end smoke test (14 checks against the running stack; needs `curl` and `python3`):
 
 ```bash
 ./scripts/smoke.sh
 ```
 
 **Using webhook.site.** By default the stack talks to a bundled mock provider, so retries and the circuit breaker can be
-exercised offline and without third-party rate limits. To use the real external simulator, create a URL on
-webhook.site, edit its response to status `202`, content type `application/json` and a body such as
-`{"messageId":"8f0c1f9e-6f6b-4c51-9d6e-2b1b8a0c7d11","status":"accepted","timestamp":"2026-01-01T00:00:00Z"}`
-(any 2xx counts as accepted, and `messageId` is stored as `providerMessageId`), then run:
+exercised offline and without third-party rate limits. To use the real external simulator, create a webhook.site URL
+that answers `202` with the documented body. You can do it in the webhook.site UI (Edit → status `202`, content type
+`application/json`), or with one command:
+
+```bash
+curl -s -X POST https://webhook.site/token -H 'Content-Type: application/json' -H 'Accept: application/json' -d '{
+  "default_status": 202, "default_content_type": "application/json",
+  "default_content": "{\"messageId\":\"8f0c1f9e-6f6b-4c51-9d6e-2b1b8a0c7d11\",\"status\":\"accepted\",\"timestamp\":\"2026-01-01T00:00:00Z\"}"
+}' | python3 -c 'import sys,json; print("https://webhook.site/" + json.load(sys.stdin)["uuid"])'
+```
+
+Then start the stack with that URL. Any 2xx counts as accepted, and `messageId` is stored as `providerMessageId`.
 
 ```bash
 PROVIDER_URL=https://webhook.site/<your-uuid> docker compose up --build
 ```
+
+Each delivery then shows up in the webhook.site page of that URL as
+`POST {"to":"+905551234567","channel":"sms","content":"…"}`, with `Idempotency-Key`, `X-Correlation-ID` and
+`traceparent` headers.
 
 (`PROVIDER_URL_SMS`, `PROVIDER_URL_EMAIL` and `PROVIDER_URL_PUSH` can point each channel somewhere else.)
 
