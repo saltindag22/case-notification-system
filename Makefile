@@ -51,5 +51,5 @@ build: ## Build all binaries into ./bin
 	CGO_ENABLED=0 $(GO) build -o bin/ ./cmd/...
 
 .PHONY: smoke
-smoke: ## Run the end-to-end smoke test against a running stack
-	./scripts/smoke.sh
+smoke: ## Run the end-to-end smoke test in Docker (starts the stack if needed)
+	$(COMPOSE) run --rm smoke
