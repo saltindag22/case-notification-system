@@ -10,6 +10,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/saltindag22/case-notification-system/internal/domain"
+	"github.com/saltindag22/case-notification-system/internal/events"
 	"github.com/saltindag22/case-notification-system/internal/metrics"
 	"github.com/saltindag22/case-notification-system/internal/queue"
 	"github.com/saltindag22/case-notification-system/internal/repository"
@@ -52,18 +53,23 @@ type DispatcherConfig struct {
 type Dispatcher struct {
 	store   DispatchStore
 	broker  Broker
+	events  events.Publisher
 	cfg     DispatcherConfig
 	metrics *metrics.Metrics
 	log     *slog.Logger
 	tracer  trace.Tracer
 }
 
-// NewDispatcher creates a dispatcher.
-func NewDispatcher(store DispatchStore, broker Broker, cfg DispatcherConfig, m *metrics.Metrics, log *slog.Logger) *Dispatcher {
+// NewDispatcher creates a dispatcher. pub (optional) receives a "queued" status
+// event for every dispatched notification.
+func NewDispatcher(store DispatchStore, broker Broker, pub events.Publisher, cfg DispatcherConfig, m *metrics.Metrics, log *slog.Logger) *Dispatcher {
 	if cfg.MaintenanceInterval <= 0 {
 		cfg.MaintenanceInterval = 30 * time.Second
 	}
-	return &Dispatcher{store: store, broker: broker, cfg: cfg, metrics: m, log: log, tracer: tracing.Tracer("dispatcher")}
+	if pub == nil {
+		pub = events.Nop{}
+	}
+	return &Dispatcher{store: store, broker: broker, events: pub, cfg: cfg, metrics: m, log: log, tracer: tracing.Tracer("dispatcher")}
 }
 
 // Run blocks until ctx is cancelled.
@@ -134,7 +140,17 @@ func (d *Dispatcher) publish(ctx context.Context, items []repository.DispatchIte
 			Headers:       headers,
 		}
 	}
-	return d.broker.PublishBatch(ctx, msgs)
+	if err := d.broker.PublishBatch(ctx, msgs); err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	for _, it := range items {
+		d.events.Publish(ctx, events.Event{
+			Type: "notification.status", NotificationID: it.ID, BatchID: it.BatchID, Channel: it.Channel,
+			Status: domain.StatusQueued, Attempts: it.Attempts, CorrelationID: it.CorrelationID, Timestamp: now,
+		})
+	}
+	return nil
 }
 
 func (d *Dispatcher) maintain(ctx context.Context) {
