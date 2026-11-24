@@ -39,7 +39,7 @@ services:
 
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
-    ports: ["15672:15672"]                # management UI: http://localhost:15672 (guest/guest)
+    ports: ["${RABBITMQ_UI_PORT:-15672}:15672"]   # management UI: http://localhost:15672 (guest/guest)
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 5s
@@ -50,13 +50,13 @@ services:
     image: jaegertracing/all-in-one:1.62.0
     environment:
       COLLECTOR_OTLP_ENABLED: "true"
-    ports: ["16686:16686"]                # tracing UI: http://localhost:16686
+    ports: ["${JAEGER_UI_PORT:-16686}:16686"]     # tracing UI: http://localhost:16686
 
   prometheus:
     image: prom/prometheus:v2.55.1
     volumes:
       - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-    ports: ["9090:9090"]
+    ports: ["${PROMETHEUS_PORT:-9090}:9090"]
     depends_on: [api, worker]
 
   mock-provider:
@@ -69,7 +69,7 @@ services:
       MOCK_FAILURE_RATE: ${MOCK_FAILURE_RATE:-0.05}
       MOCK_LATENCY_MS: ${MOCK_LATENCY_MS:-30}
       MOCK_LATENCY_JITTER_MS: ${MOCK_LATENCY_JITTER_MS:-40}
-    ports: ["8090:8090"]
+    ports: ["${MOCK_PROVIDER_PORT:-8090}:8090"]
     healthcheck:
       test: ["CMD", "/app/mockprovider", "healthcheck"]
       interval: 3s
@@ -104,7 +104,7 @@ services:
       <<: *app-env
       SERVICE_NAME: notification-worker
       HTTP_ADDR: ":9091"
-    ports: ["9091:9091"]
+    ports: ["${WORKER_PORT:-9091}:9091"]
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -119,6 +119,21 @@ services:
     # The worker deliberately exits when it loses its broker connection
     # (crash-only design); the orchestrator restarts it and it reconnects cleanly.
     restart: unless-stopped
+
+  # End-to-end smoke test against the running stack (starts it if needed):
+  #   docker compose run --rm smoke
+  smoke:
+    image: python:3.13-alpine
+    profiles: ["test"]
+    working_dir: /src
+    command: ["python", "scripts/smoke.py"]
+    environment:
+      API: http://api:8080
+    volumes:
+      - ./scripts:/src/scripts:ro
+    depends_on:
+      api: { condition: service_healthy }
+      worker: { condition: service_healthy }
 
   # Full test suite (unit + integration against real Postgres/Redis):
   #   docker compose run --rm tests
