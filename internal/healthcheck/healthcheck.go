@@ -23,7 +23,7 @@ func Run(defaultAddr string) int {
 		return 1
 	}
 	client := &http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Get("http://127.0.0.1:" + port + "/health/live")
+	resp, err := client.Get("http://127.0.0.1:" + port + "/health/live") //nolint:gosec,noctx // fixed loopback probe
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "healthcheck:", err)
 		return 1
