@@ -190,6 +190,9 @@ func TestDispatchClaimComplete(t *testing.T) {
 	if published[0].ID != high.ID || published[1].ID != low.ID {
 		t.Fatal("high priority must be dispatched first")
 	}
+	if published[0].PreviousStatus != domain.StatusPending {
+		t.Fatalf("previous status must be reported, got %q", published[0].PreviousStatus)
+	}
 
 	// Duplicate delivery: only the first claim wins.
 	c1, err := s.Claim(ctx, high.ID, 0)

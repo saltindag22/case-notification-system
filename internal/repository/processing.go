@@ -21,6 +21,9 @@ type DispatchItem struct {
 	Attempts      int
 	CorrelationID string
 	TraceParent   string
+	// PreviousStatus is the status before dispatch (pending, scheduled or retrying);
+	// the row returns to it if publishing fails.
+	PreviousStatus domain.Status
 }
 
 // DispatchDue moves up to limit due notifications of a channel to "queued" and
@@ -67,6 +70,7 @@ func (s *Store) DispatchDue(ctx context.Context, ch domain.Channel, limit int, p
 				return err
 			}
 			it.Channel, it.Priority, it.CorrelationID, it.TraceParent = ch, domain.Priority(prio), deref(corr), deref(tp)
+			it.PreviousStatus = domain.Status(status)
 			items = append(items, it)
 			ids = append(ids, it.ID.String())
 			previous = append(previous, status)
