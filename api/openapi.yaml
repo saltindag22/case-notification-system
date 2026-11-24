@@ -642,7 +642,7 @@ components:
           properties:
             code:
               type: string
-              enum: [validation_error, invalid_request, not_found, invalid_state, idempotency_conflict, conflict, payload_too_large, internal_error]
+              enum: [validation_error, invalid_request, not_found, method_not_allowed, invalid_state, idempotency_conflict, conflict, payload_too_large, internal_error]
             message: { type: string }
             fields:
               type: array

@@ -315,8 +315,32 @@ func TestCorrelationIDGeneratedWhenInvalid(t *testing.T) {
 
 func TestUnknownRoute(t *testing.T) {
 	srv, _ := newTestServer(&stubService{})
-	if rec := do(t, srv, "GET", "/nope", "", nil); rec.Code != 404 {
-		t.Fatalf("expected 404, got %d", rec.Code)
+	rec := do(t, srv, "GET", "/nope", "", nil)
+	if rec.Code != 404 || decodeBody(t, rec)["error"].(map[string]any)["code"] != "not_found" {
+		t.Fatalf("expected JSON 404, got %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestWrongMethodIs405(t *testing.T) {
+	srv, _ := newTestServer(&stubService{})
+	rec := do(t, srv, "DELETE", "/api/v1/notifications", "", nil)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d %s", rec.Code, rec.Body)
+	}
+	if !strings.Contains(rec.Header().Get("Allow"), "POST") || !strings.HasPrefix(rec.Header().Get("Content-Type"), "application/json") {
+		t.Fatalf("405 must be JSON and list allowed methods, headers %v", rec.Header())
+	}
+	if decodeBody(t, rec)["error"].(map[string]any)["code"] != "method_not_allowed" {
+		t.Fatalf("unexpected body %s", rec.Body)
+	}
+}
+
+func TestBadRequestMessageHasNoPrefix(t *testing.T) {
+	srv, _ := newTestServer(&stubService{})
+	rec := do(t, srv, "POST", "/api/v1/notifications", `{"chanel":"sms"}`, nil)
+	msg := decodeBody(t, rec)["error"].(map[string]any)["message"].(string)
+	if rec.Code != 400 || msg != `invalid JSON: unknown field "chanel"` {
+		t.Fatalf("unexpected message %q", msg)
 	}
 }
 

@@ -30,8 +30,16 @@ const (
 	headerReplayed    = "Idempotent-Replayed"
 )
 
+// requestError is a malformed request; its message is shown to the client as is.
+type requestError struct{ msg string }
+
+func (e *requestError) Error() string { return e.msg }
+
+// Is lets errors.Is(err, errBadRequest) match.
+func (e *requestError) Is(target error) bool { return target == errBadRequest }
+
 func badRequest(format string, args ...any) error {
-	return fmt.Errorf("%w: %s", errBadRequest, fmt.Sprintf(format, args...))
+	return &requestError{msg: fmt.Sprintf(format, args...)}
 }
 
 // decode reads exactly one JSON object, rejecting unknown fields.
@@ -52,7 +60,7 @@ func decode(w http.ResponseWriter, r *http.Request, limit int64, dst any) error 
 		case errors.As(err, &ute):
 			return badRequest("field %q must be of type %s", ute.Field, ute.Type)
 		default:
-			return badRequest("invalid JSON: %s", err.Error())
+			return badRequest("invalid JSON: %s", strings.TrimPrefix(err.Error(), "json: "))
 		}
 	}
 	if dec.More() {

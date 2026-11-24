@@ -115,11 +115,7 @@ func NewServer(d Deps) *Server {
 		// Not wrapped in otelhttp/recorder: the connection is hijacked and long lived.
 		s.mux.HandleFunc("GET /ws", s.hub.ServeWS)
 	}
-	s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		writeErrorCode(w, r, http.StatusNotFound, "not_found", "route not found")
-	})
-
-	s.handler = s.recoverMiddleware(correlationMiddleware(s.mux))
+	s.handler = s.recoverMiddleware(correlationMiddleware(routerErrorsAsJSON(s.mux)))
 	return s
 }
 
