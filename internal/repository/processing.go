@@ -23,18 +23,32 @@ type DispatchItem struct {
 	TraceParent   string
 }
 
-// DispatchDue locks up to limit due notifications of a channel, hands them to
-// publish, and marks them queued in the same transaction. If publish fails the
-// transaction rolls back and the rows stay due. SKIP LOCKED lets several worker
-// replicas dispatch concurrently without blocking or double-dispatching.
+// DispatchDue moves up to limit due notifications of a channel to "queued" and
+// hands them to publish.
+//
+// The state change is committed BEFORE publishing. Publishing inside the
+// transaction would let an idle consumer receive the message before the commit
+// is visible; its conditional claim would then miss the row and drop the message.
+// Consequences of the chosen order:
+//   - publish fails: the rows are reverted to their previous status right away;
+//   - the process crashes between commit and publish: the rows stay "queued"
+//     without a message and the reaper returns them to the backlog
+//     (RecoverStuck, STUCK_QUEUED_AFTER).
+//
+// SKIP LOCKED lets several worker replicas dispatch concurrently without
+// blocking or double-dispatching.
 func (s *Store) DispatchDue(ctx context.Context, ch domain.Channel, limit int, publish func(context.Context, []DispatchItem) error) (int, error) {
 	if limit <= 0 {
 		return 0, nil
 	}
-	var count int
+	var (
+		items    []DispatchItem
+		ids      []string
+		previous []string
+	)
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `
-			SELECT id, batch_id, effective_priority, attempts, correlation_id, trace_parent
+			SELECT id, batch_id, effective_priority, attempts, correlation_id, trace_parent, status
 			FROM notifications
 			WHERE channel = $1 AND status = ANY($2::text[]) AND next_attempt_at <= now()
 			ORDER BY effective_priority DESC, next_attempt_at
@@ -43,17 +57,19 @@ func (s *Store) DispatchDue(ctx context.Context, ch domain.Channel, limit int, p
 		if err != nil {
 			return err
 		}
-		var items []DispatchItem
 		for rows.Next() {
 			var it DispatchItem
 			var prio int16
 			var corr, tp *string
-			if err := rows.Scan(&it.ID, &it.BatchID, &prio, &it.Attempts, &corr, &tp); err != nil {
+			var status string
+			if err := rows.Scan(&it.ID, &it.BatchID, &prio, &it.Attempts, &corr, &tp, &status); err != nil {
 				rows.Close()
 				return err
 			}
 			it.Channel, it.Priority, it.CorrelationID, it.TraceParent = ch, domain.Priority(prio), deref(corr), deref(tp)
 			items = append(items, it)
+			ids = append(ids, it.ID.String())
+			previous = append(previous, status)
 		}
 		rows.Close()
 		if err := rows.Err(); err != nil {
@@ -62,20 +78,26 @@ func (s *Store) DispatchDue(ctx context.Context, ch domain.Channel, limit int, p
 		if len(items) == 0 {
 			return nil
 		}
-		if err := publish(ctx, items); err != nil {
-			return fmt.Errorf("publish: %w", err)
-		}
-		ids := make([]string, len(items))
-		for i, it := range items {
-			ids[i] = it.ID.String()
-		}
-		if _, err := tx.Exec(ctx, `UPDATE notifications SET status = 'queued', updated_at = now() WHERE id = ANY($1::uuid[])`, ids); err != nil {
-			return err
-		}
-		count = len(items)
-		return nil
+		_, err = tx.Exec(ctx, `UPDATE notifications SET status = 'queued', updated_at = now() WHERE id = ANY($1::uuid[])`, ids)
+		return err
 	})
-	return count, err
+	if err != nil || len(items) == 0 {
+		return 0, err
+	}
+
+	if err := publish(ctx, items); err != nil {
+		// Only rows still queued are reverted; anything cancelled meanwhile stays cancelled.
+		revertCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		if _, rerr := s.pool.Exec(revertCtx, `
+			UPDATE notifications n SET status = v.prev, updated_at = now()
+			FROM unnest($1::uuid[], $2::text[]) AS v(id, prev)
+			WHERE n.id = v.id AND n.status = 'queued'`, ids, previous); rerr != nil {
+			return 0, fmt.Errorf("publish: %w (revert failed, reaper will recover: %v)", err, rerr)
+		}
+		return 0, fmt.Errorf("publish: %w", err)
+	}
+	return len(items), nil
 }
 
 // Claim moves a queued notification to processing and consumes one attempt.
