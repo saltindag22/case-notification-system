@@ -18,8 +18,10 @@ info:
     name: MIT
     url: https://opensource.org/licenses/MIT
 servers:
+  - url: /
+    description: The server hosting this documentation (Swagger UI "Try it out" works on any port)
   - url: http://localhost:8080
-    description: docker compose
+    description: docker compose default
 # Authentication is out of scope for this assessment (see README); the API is meant
 # to run behind an API gateway that authenticates callers.
 security: []
