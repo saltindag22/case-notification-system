@@ -236,7 +236,7 @@ func (f *fakeDispatchStore) DispatchDue(ctx context.Context, ch domain.Channel, 
 	n := min(limit, f.due[ch])
 	items := make([]repository.DispatchItem, n)
 	for i := range items {
-		items[i] = repository.DispatchItem{ID: domain.NewID(), Channel: ch, Priority: domain.PriorityHigh}
+		items[i] = repository.DispatchItem{ID: domain.NewID(), Channel: ch, Priority: domain.PriorityHigh, PreviousStatus: domain.StatusPending}
 	}
 	if n > 0 {
 		if err := publish(ctx, items); err != nil {
@@ -257,9 +257,17 @@ type fakeBroker struct {
 	depth     int
 	published []queue.Outgoing
 	fail      bool
+	// eventsAtPublish records how many status events existed when the broker publish happened.
+	sink            *eventSink
+	eventsAtPublish []int
 }
 
 func (b *fakeBroker) PublishBatch(_ context.Context, msgs []queue.Outgoing) error {
+	if b.sink != nil {
+		b.sink.mu.Lock()
+		b.eventsAtPublish = append(b.eventsAtPublish, len(b.sink.events))
+		b.sink.mu.Unlock()
+	}
 	if b.fail {
 		return errors.New("broker down")
 	}
@@ -288,8 +296,8 @@ func TestDispatcherRespectsQueueDepthLimit(t *testing.T) {
 
 func TestDispatcherStopsWhenBacklogEmpty(t *testing.T) {
 	store := &fakeDispatchStore{due: map[domain.Channel]int{domain.ChannelEmail: 3}}
-	broker := &fakeBroker{}
 	pub := &eventSink{}
+	broker := &fakeBroker{sink: pub}
 	d := NewDispatcher(store, broker, pub, DispatcherConfig{BatchSize: 100, MaxQueueDepth: 2000}, nil, discard)
 	if err := d.DispatchChannel(context.Background(), domain.ChannelEmail); err != nil || len(broker.published) != 3 {
 		t.Fatalf("published %d err %v", len(broker.published), err)
@@ -297,16 +305,23 @@ func TestDispatcherStopsWhenBacklogEmpty(t *testing.T) {
 	if len(pub.events) != 3 || pub.events[0].Status != domain.StatusQueued {
 		t.Fatalf("expected 3 queued events, got %+v", pub.events)
 	}
+	if broker.eventsAtPublish[0] != 3 {
+		t.Fatalf("queued events must be emitted before the broker publish (had %d)", broker.eventsAtPublish[0])
+	}
 }
 
 func TestDispatcherPublishFailureKeepsBacklog(t *testing.T) {
 	store := &fakeDispatchStore{due: map[domain.Channel]int{domain.ChannelPush: 5}}
-	d := NewDispatcher(store, &fakeBroker{fail: true}, nil, DispatcherConfig{BatchSize: 100, MaxQueueDepth: 2000}, nil, discard)
+	pub := &eventSink{}
+	d := NewDispatcher(store, &fakeBroker{fail: true}, pub, DispatcherConfig{BatchSize: 100, MaxQueueDepth: 2000}, nil, discard)
 	if err := d.DispatchChannel(context.Background(), domain.ChannelPush); err == nil {
 		t.Fatal("expected error")
 	}
 	if store.due[domain.ChannelPush] != 5 {
 		t.Fatal("failed publish must leave rows due")
+	}
+	if n := len(pub.events); n != 10 || pub.events[5].Status != domain.StatusPending {
+		t.Fatalf("expected 5 queued + 5 reverting events, got %d (%+v)", n, pub.events)
 	}
 }
 

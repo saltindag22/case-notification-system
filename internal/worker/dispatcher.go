@@ -140,17 +140,27 @@ func (d *Dispatcher) publish(ctx context.Context, items []repository.DispatchIte
 			Headers:       headers,
 		}
 	}
+	// The "queued" events go out BEFORE the broker publish. Once a message is in
+	// RabbitMQ an idle consumer may claim it immediately and emit "processing";
+	// announcing "queued" afterwards would make WebSocket clients see the status
+	// move backwards. The row is already committed as queued at this point.
+	d.emit(ctx, items, func(repository.DispatchItem) domain.Status { return domain.StatusQueued })
 	if err := d.broker.PublishBatch(ctx, msgs); err != nil {
+		// The repository reverts the rows; tell subscribers the queued state did not stick.
+		d.emit(ctx, items, func(it repository.DispatchItem) domain.Status { return it.PreviousStatus })
 		return err
 	}
+	return nil
+}
+
+func (d *Dispatcher) emit(ctx context.Context, items []repository.DispatchItem, status func(repository.DispatchItem) domain.Status) {
 	now := time.Now().UTC()
 	for _, it := range items {
 		d.events.Publish(ctx, events.Event{
 			Type: "notification.status", NotificationID: it.ID, BatchID: it.BatchID, Channel: it.Channel,
-			Status: domain.StatusQueued, Attempts: it.Attempts, CorrelationID: it.CorrelationID, Timestamp: now,
+			Status: status(it), Attempts: it.Attempts, CorrelationID: it.CorrelationID, Timestamp: now,
 		})
 	}
-	return nil
 }
 
 func (d *Dispatcher) maintain(ctx context.Context) {
