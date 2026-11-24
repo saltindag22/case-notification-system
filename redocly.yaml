@@ -5,3 +5,4 @@ rules:
   no-server-example.com: off       # the documented server is the local docker compose stack
   operation-4xx-response: off      # ops endpoints (health, metrics) have no client error cases
   operation-2xx-response: off      # /ws answers 101 Switching Protocols
+  info-license: off                # no license is granted for this assessment code
