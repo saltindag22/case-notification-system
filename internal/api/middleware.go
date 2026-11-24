@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"runtime/debug"
 	"strconv"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -49,6 +50,56 @@ func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 
 // Unwrap supports http.ResponseController.
 func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
+
+// routerErrorsAsJSON turns the router's own plain-text 404 (unknown route) and
+// 405 (known route, wrong method; the Allow header is kept) into the JSON error
+// envelope used everywhere else. Handlers' own responses are never JSON-rewritten
+// because they are not text/plain.
+func routerErrorsAsJSON(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(&routerErrorWriter{ResponseWriter: w, r: r}, r)
+	})
+}
+
+type routerErrorWriter struct {
+	http.ResponseWriter
+	r           *http.Request
+	intercepted bool
+}
+
+func (w *routerErrorWriter) WriteHeader(code int) {
+	if (code == http.StatusNotFound || code == http.StatusMethodNotAllowed) &&
+		strings.HasPrefix(w.Header().Get("Content-Type"), "text/plain") {
+		w.intercepted = true
+		w.Header().Del("X-Content-Type-Options")
+		if code == http.StatusNotFound {
+			writeErrorCode(w.ResponseWriter, w.r, code, "not_found", "route not found")
+		} else {
+			writeErrorCode(w.ResponseWriter, w.r, code, "method_not_allowed", "method not allowed (see the Allow header)")
+		}
+		return
+	}
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *routerErrorWriter) Write(b []byte) (int, error) {
+	if w.intercepted {
+		return len(b), nil
+	}
+	return w.ResponseWriter.Write(b)
+}
+
+// Hijack keeps WebSocket upgrades working through the wrapper.
+func (w *routerErrorWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h, ok := w.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, errors.New("hijacking not supported")
+	}
+	return h.Hijack()
+}
+
+// Unwrap supports http.ResponseController.
+func (w *routerErrorWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 // correlationMiddleware accepts X-Correlation-ID (or X-Request-ID), generates one
 // when absent/invalid, echoes it in the response and stores it in the context.

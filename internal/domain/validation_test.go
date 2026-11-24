@@ -157,6 +157,9 @@ func TestParsers(t *testing.T) {
 	if c, err := ParseChannel(" SMS "); err != nil || c != ChannelSMS {
 		t.Fatalf("channel parsing should be case/space insensitive, got %v %v", c, err)
 	}
+	if _, err := ParseChannel(" "); err == nil || !strings.HasPrefix(err.Error(), "is required") {
+		t.Fatalf("empty channel should be reported as required, got %v", err)
+	}
 	if _, err := ParseStatus("delivered"); err == nil {
 		t.Fatal("unknown status accepted")
 	}

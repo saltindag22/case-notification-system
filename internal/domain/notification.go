@@ -26,6 +26,9 @@ var Channels = []Channel{ChannelSMS, ChannelEmail, ChannelPush}
 
 // ParseChannel converts user input into a Channel.
 func ParseChannel(s string) (Channel, error) {
+	if strings.TrimSpace(s) == "" {
+		return "", fmt.Errorf("is required (allowed: sms, email, push)")
+	}
 	switch c := Channel(strings.ToLower(strings.TrimSpace(s))); c {
 	case ChannelSMS, ChannelEmail, ChannelPush:
 		return c, nil
