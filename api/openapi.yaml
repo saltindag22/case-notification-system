@@ -32,6 +32,18 @@ tags:
   - name: Observability
     description: Metrics, health checks and the real-time WebSocket status stream.
 paths:
+  /api/v1:
+    get:
+      tags: [Observability]
+      summary: API index (links to documentation and the list of endpoints)
+      operationId: getIndex
+      responses:
+        '200':
+          description: API description
+          content:
+            application/json:
+              example: { name: Event-Driven Notification System API, version: dev, docs: { swaggerUI: /swagger, openapi: /openapi.yaml } }
+
   /api/v1/notifications:
     post:
       tags: [Notifications]

@@ -99,6 +99,8 @@ func NewServer(d Deps) *Server {
 	s.route("DELETE /api/v1/templates/{id}", s.deleteTemplate)
 
 	s.route("GET /api/v1/metrics", s.getMetrics)
+	s.route("GET /api/v1", s.index)
+	s.route("GET /api/v1/{$}", s.index)
 
 	s.route("GET /health/live", s.live)
 	s.route("GET /health/ready", s.ready)

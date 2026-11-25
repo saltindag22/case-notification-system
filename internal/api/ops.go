@@ -77,6 +77,32 @@ func (s *Server) getMetrics(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// index describes the API so that opening the base URL in a browser is useful.
+func (s *Server) index(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"name":    "Event-Driven Notification System API",
+		"version": s.version,
+		"docs":    map[string]string{"swaggerUI": "/swagger", "openapi": "/openapi.yaml"},
+		"endpoints": []string{
+			"POST /api/v1/notifications",
+			"POST /api/v1/notifications/batch",
+			"GET  /api/v1/notifications?status=&channel=&batchId=&from=&to=&limit=&cursor=",
+			"GET  /api/v1/notifications/{id}",
+			"POST /api/v1/notifications/{id}/cancel",
+			"POST /api/v1/notifications/{id}/retry",
+			"GET  /api/v1/batches/{id}",
+			"GET  /api/v1/batches/{id}/notifications",
+			"POST /api/v1/batches/{id}/cancel",
+			"POST /api/v1/templates",
+			"GET  /api/v1/templates",
+			"GET|PUT|DELETE /api/v1/templates/{id}",
+			"GET  /api/v1/metrics?window=5m",
+			"GET  /ws?notificationId=&batchId=&channel=",
+			"GET  /health/live, /health/ready, /metrics",
+		},
+	})
+}
+
 func (s *Server) live(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":  "ok",
