@@ -140,7 +140,9 @@ func (s *Service) build(ctx context.Context, in CreateNotificationInput, cache t
 		channelInput = string(tpl.Channel)
 	}
 	ch, err := domain.ParseChannel(channelInput)
-	if err != nil {
+	// With an unusable templateId the channel cannot be inferred from the template;
+	// the templateId error already explains the problem, so do not add a second one.
+	if err != nil && (in.TemplateID == nil || tpl != nil || in.Channel != "") {
 		v.Add("channel", "%s", err.Error())
 	}
 	n.Channel = ch

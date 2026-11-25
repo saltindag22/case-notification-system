@@ -313,6 +313,16 @@ func TestCorrelationIDGeneratedWhenInvalid(t *testing.T) {
 	}
 }
 
+func TestAPIIndex(t *testing.T) {
+	srv, _ := newTestServer(&stubService{})
+	for _, path := range []string{"/api/v1", "/api/v1/"} {
+		rec := do(t, srv, "GET", path, "", nil)
+		if rec.Code != 200 || decodeBody(t, rec)["docs"].(map[string]any)["swaggerUI"] != "/swagger" {
+			t.Fatalf("%s: expected API index, got %d %s", path, rec.Code, rec.Body)
+		}
+	}
+}
+
 func TestUnknownRoute(t *testing.T) {
 	srv, _ := newTestServer(&stubService{})
 	rec := do(t, srv, "GET", "/nope", "", nil)

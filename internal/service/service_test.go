@@ -249,6 +249,11 @@ func TestTemplateRendering(t *testing.T) {
 	if _, ok := fieldErrors(t, err)["templateId"]; !ok {
 		t.Fatal("channel mismatch must be reported")
 	}
+	bad := "<id>"
+	_, _, err = svc.Create(context.Background(), CreateNotificationInput{Recipient: "a@example.com", TemplateID: &bad}, "")
+	if fe := fieldErrors(t, err); fe["templateId"] == "" || fe["channel"] != "" {
+		t.Fatalf("invalid templateId must be the only error, got %v", fe)
+	}
 	_, _, err = svc.Create(context.Background(), CreateNotificationInput{Recipient: "a@example.com", TemplateID: &id, Content: "x"}, "")
 	if _, ok := fieldErrors(t, err)["content"]; !ok {
 		t.Fatal("content together with templateId must be rejected")
