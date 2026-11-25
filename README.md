@@ -513,6 +513,11 @@ What is covered:
   publish failure.
 - **API:** status codes and error envelopes, idempotent replay headers, body limits, filter and cursor parsing,
   metrics, health, correlation ids, WebSocket filtering and dynamic subscription.
+- **Queue (integration, real RabbitMQ):** topology declaration, routing by channel, priority order with metadata and
+  trace headers, requeue, dead-lettering of rejected and undecodable messages, consumer stop and connection close.
+  Each test runs in its own temporary RabbitMQ virtual host, so it never interferes with a running worker.
+- **Config, health check, metrics:** defaults, overrides, fallbacks and rejection of invalid settings; the Docker
+  health check command; registered instruments and the database-backed backlog gauge (including source errors).
 
 ---
 
