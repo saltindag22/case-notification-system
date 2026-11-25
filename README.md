@@ -133,10 +133,20 @@ and without third-party rate limits. To use the real external simulator:
    ```
 2. Put the URL into `.env` as `PROVIDER_URL=https://webhook.site/<your-uuid>` and restart with `docker compose up --build`.
 
-Any 2xx counts as accepted, and `messageId` is stored as `providerMessageId`. Each delivery shows up on the
-webhook.site page as `POST {"to":"+905551234567","channel":"sms","content":"…"}`, with `Idempotency-Key`,
-`X-Correlation-ID` and `traceparent` headers. (`PROVIDER_URL_SMS`, `PROVIDER_URL_EMAIL` and `PROVIDER_URL_PUSH`
-can point each channel somewhere else.)
+Any 2xx counts as accepted, and `messageId` is stored as `providerMessageId`. (`PROVIDER_URL_SMS`,
+`PROVIDER_URL_EMAIL` and `PROVIDER_URL_PUSH` can point each channel somewhere else.)
+
+**Where to see the deliveries:** open `https://webhook.site/#!/view/<your-uuid>`. Each delivery appears as
+`POST {"to":"+905551234567","channel":"sms","content":"…"}` with `Idempotency-Key`, `X-Correlation-ID` and
+`traceparent` headers. Opening `https://webhook.site/<your-uuid>` itself sends a request from your browser and only
+shows the configured `202` body; it does not list deliveries.
+
+**Free plan limit:** a free webhook.site URL accepts only **50 requests** and then answers
+`429 Request limit exceeded`. The system treats that as a retryable provider error: it retries with backoff, the
+circuit breaker opens, and after the attempt budget is spent the notifications end as `failed`. Use webhook.site for a
+handful of manual deliveries, and create a new URL when one is used up. Run batch and load tests (including
+`docker compose run --rm smoke`, which sends about 200 messages) against the default mock provider, i.e. without
+`PROVIDER_URL`.
 
 ### Troubleshooting
 
@@ -372,13 +382,19 @@ curl -s -X POST localhost:8080/api/v1/templates -H 'Content-Type: application/js
   "name": "welcome-email", "channel": "email",
   "subject": "Welcome {{.name}}", "content": "Hi {{.name}}, here is {{.discount}}% off."
 }'
+```
+The response contains the new template's `id`. Template names are unique, so running this a second time returns
+`409`; use another name to create one more.
 
+Replace `<id>` below with that `id`, for example `"templateId": "01a211b6-66ff-7512-87f6-18ad6f109249"`:
+```bash
 curl -s -X POST localhost:8080/api/v1/notifications -H 'Content-Type: application/json' -d '{
   "recipient": "ayse@example.com", "templateId": "<id>",
   "variables": {"name": "Ayşe", "discount": 20}
 }'
 ```
-The result has subject "Welcome Ayşe" and content "Hi Ayşe, here is 20% off.". A missing variable is a 400.
+The notification gets subject "Welcome Ayşe" and content "Hi Ayşe, here is 20% off.". The channel is taken from
+the template. A missing variable, or a `templateId` that is not a valid template id, is a `400` that names the field.
 </details>
 
 <details>
