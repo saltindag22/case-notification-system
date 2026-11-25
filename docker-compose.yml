@@ -145,6 +145,9 @@ services:
     environment:
       DATABASE_URL: postgres://notifications:notifications@postgres:5432/notifications_test?sslmode=disable
       REDIS_URL: redis://redis:6379/15
+      # Queue tests create a temporary RabbitMQ virtual host per test (via the
+      # management API on rabbitmq:15672), so they never touch a running worker.
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
     volumes:
       - .:/src
       - gomod:/go/pkg/mod
@@ -152,6 +155,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
 
 volumes:
   pgdata:
